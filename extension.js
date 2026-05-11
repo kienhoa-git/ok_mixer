@@ -25,24 +25,47 @@ const AppStreamSlider = GObject.registerClass(
       const name = stream.get_name?.() ?? "";
       const description = stream.get_description?.() ?? "";
       const labelText =
-        name && description
-          ? `${name} — ${description}`
-          : name || description || "App";
+        name && description ? `${name} — ${description}` : name || description;
 
-      this._appLabel = new St.Label({
-        text: labelText,
-        y_align: Clutter.ActorAlign.CENTER,
-        x_expand: false,
-        style: "min-width: 100px; max-width: 150px;",
-      });
+      if (!this._stacked) {
+        this._stacked = true;
 
-      const box = this.get_first_child();
-      if (box) box.insert_child_at_index(this._appLabel, 1);
+        this._appLabel = new St.Label({
+          text: labelText,
+          x_expand: true,
+          x_align: Clutter.ActorAlign.START,
+          style: "min-width: 0; max-width: 20em",
+        });
 
-      this._sliderChangedId = this.slider.connect(
-        "notify::value",
-        this._onSliderChanged.bind(this),
-      );
+        const vbox = new St.BoxLayout({
+          vertical: true,
+          x_expand: true,
+          x_align: Clutter.ActorAlign.FILL,
+          style: "spacing: 6px; min-width: 0;",
+        });
+
+        const slider = this.slider;
+        const sliderBin = slider.get_parent(); // St.Bin
+
+        sliderBin.set_child(vbox);
+
+        vbox.add_child(this._appLabel);
+
+        slider.x_expand = true;
+        slider.x_align = Clutter.ActorAlign.FILL;
+        vbox.add_child(slider);
+
+        sliderBin.x_expand = true;
+      } else {
+        if (this._appLabel) this._appLabel.text = labelText;
+      }
+
+      if (!this._sliderChangedId) {
+        this._sliderChangedId = this.slider.connect(
+          "notify::value",
+          this._onSliderChanged.bind(this),
+        );
+      }
 
       this.connect("icon-clicked", () => {
         if (this._stream) this._stream.change_is_muted(!this._stream.is_muted);
