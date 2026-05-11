@@ -1,0 +1,8 @@
+{
+  "name": "Mixer",
+  "description": "App specific volume adjustment",
+  "uuid": "mixer@enklht.test.com",
+  "shell-version": [
+    "50"
+  ]
+}
