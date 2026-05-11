@@ -1,5 +1,7 @@
+import Clutter from "gi://Clutter";
 import GObject from "gi://GObject";
 import Gvc from "gi://Gvc";
+import St from "gi://St";
 
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as Volume from "resource:///org/gnome/shell/ui/status/volume.js";
@@ -10,20 +12,32 @@ import {
   SystemIndicator,
 } from "resource:///org/gnome/shell/ui/quickSettings.js";
 
-// ── Per-app slider — same pattern as OutputStreamSlider in volume.js ──────────
-
 const AppStreamSlider = GObject.registerClass(
   class AppStreamSlider extends QuickSlider {
     _init(stream, control) {
       super._init({
-        iconName: "audio-volume-high-symbolic",
+        iconName: stream.get_icon_name?.() ?? "audio-volume-high-symbolic",
       });
 
       this._control = control;
       this._stream = null;
 
-      // Label shown on the slider
-      this.title = stream.get_name?.() ?? "App";
+      const name = stream.get_name?.() ?? "";
+      const description = stream.get_description?.() ?? "";
+      const labelText =
+        name && description
+          ? `${name} — ${description}`
+          : name || description || "App";
+
+      this._appLabel = new St.Label({
+        text: labelText,
+        y_align: Clutter.ActorAlign.CENTER,
+        x_expand: false,
+        style: "min-width: 100px; max-width: 150px;",
+      });
+
+      const box = this.get_first_child();
+      if (box) box.insert_child_at_index(this._appLabel, 1);
 
       this._sliderChangedId = this.slider.connect(
         "notify::value",
@@ -80,12 +94,10 @@ const AppStreamSlider = GObject.registerClass(
       this.slider.unblock_signal_handler(this._sliderChangedId);
       this.iconName = this._stream.is_muted
         ? "audio-volume-muted-symbolic"
-        : "audio-volume-high-symbolic";
+        : (this._stream.get_icon_name?.() ?? "audio-volume-high-symbolic");
     }
   },
 );
-
-// ── SystemIndicator ───────────────────────────────────────────────────────────
 
 const MixerIndicator = GObject.registerClass(
   class MixerIndicator extends SystemIndicator {
@@ -116,23 +128,16 @@ const MixerIndicator = GObject.registerClass(
       if (stream.is_event_stream || !(stream instanceof Gvc.MixerSinkInput))
         return;
 
-      console.log(`[Mixer] ✓ adding "${stream.get_name?.()}"`);
-
       const slider = new AppStreamSlider(stream, this._control);
+
       this._applicationStreams[id] = slider;
-
-      // Push directly into quickSettingsItems — same as volume.js does
       this.quickSettingsItems.push(slider);
-
-      // Re-register so the new item appears in the panel
-      const qs = Main.panel.statusArea.quickSettings;
-      qs.addExternalIndicator(this);
+      Main.panel.statusArea.quickSettings.addExternalIndicator(this, 2);
     }
 
     _streamRemoved(_control, id) {
       if (!(id in this._applicationStreams)) return;
       const slider = this._applicationStreams[id];
-      // Remove from quickSettingsItems
       const idx = this.quickSettingsItems.indexOf(slider);
       if (idx !== -1) this.quickSettingsItems.splice(idx, 1);
       slider.destroy();
@@ -150,12 +155,13 @@ const MixerIndicator = GObject.registerClass(
   },
 );
 
-// ── Extension ─────────────────────────────────────────────────────────────────
-
 export default class MixerExtension extends Extension {
   enable() {
     this._indicator = new MixerIndicator();
-    Main.panel.statusArea.quickSettings.addExternalIndicator(this._indicator);
+    Main.panel.statusArea.quickSettings.addExternalIndicator(
+      this._indicator,
+      2,
+    );
   }
 
   disable() {
