@@ -17,6 +17,7 @@ const AppStreamSlider = GObject.registerClass(
     _init(stream, control) {
       super._init({
         iconName: stream.get_icon_name?.() ?? "audio-volume-high-symbolic",
+        iconReactive: true,
       });
 
       this._control = control;
@@ -25,47 +26,31 @@ const AppStreamSlider = GObject.registerClass(
       const name = stream.get_name?.() ?? "";
       const description = stream.get_description?.() ?? "";
       const labelText =
-        name && description ? `${name} — ${description}` : name || description;
+        name && description ? `${name}: ${description}` : name || description;
+      const appLabel = new St.Label({
+        text: labelText,
+        x_expand: true,
+        x_align: Clutter.ActorAlign.START,
+        style: "min-width: 0;",
+      });
 
-      if (!this._stacked) {
-        this._stacked = true;
+      const box = this.child;
+      const sliderBin = this.slider.get_parent();
+      box.remove_child(sliderBin);
 
-        this._appLabel = new St.Label({
-          text: labelText,
-          x_expand: true,
-          x_align: Clutter.ActorAlign.START,
-          style: "min-width: 0; max-width: 20em",
-        });
+      const vbox = new St.BoxLayout({
+        orientation: Clutter.Orientation.VERTICAL,
+        x_expand: true,
+      });
+      vbox.add_child(appLabel);
+      vbox.add_child(sliderBin);
 
-        const vbox = new St.BoxLayout({
-          vertical: true,
-          x_expand: true,
-          x_align: Clutter.ActorAlign.FILL,
-          style: "spacing: 6px; min-width: 0;",
-        });
+      box.add_child(vbox);
 
-        const slider = this.slider;
-        const sliderBin = slider.get_parent(); // St.Bin
-
-        sliderBin.set_child(vbox);
-
-        vbox.add_child(this._appLabel);
-
-        slider.x_expand = true;
-        slider.x_align = Clutter.ActorAlign.FILL;
-        vbox.add_child(slider);
-
-        sliderBin.x_expand = true;
-      } else {
-        if (this._appLabel) this._appLabel.text = labelText;
-      }
-
-      if (!this._sliderChangedId) {
-        this._sliderChangedId = this.slider.connect(
-          "notify::value",
-          this._onSliderChanged.bind(this),
-        );
-      }
+      this._sliderChangedId = this.slider.connect(
+        "notify::value",
+        this._onSliderChanged.bind(this),
+      );
 
       this.connect("icon-clicked", () => {
         if (this._stream) this._stream.change_is_muted(!this._stream.is_muted);
@@ -155,7 +140,6 @@ const MixerIndicator = GObject.registerClass(
 
       this._applicationStreams[id] = slider;
       this.quickSettingsItems.push(slider);
-      Main.panel.statusArea.quickSettings.addExternalIndicator(this, 2);
     }
 
     _streamRemoved(_control, id) {
