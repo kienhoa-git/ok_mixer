@@ -2,85 +2,85 @@ import Clutter from "gi://Clutter";
 import GObject from "gi://GObject";
 import Gvc from "gi://Gvc";
 import St from "gi://St";
+import { Slider } from "resource:///org/gnome/shell/ui/slider.js";
 
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
+import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
 import * as Volume from "resource:///org/gnome/shell/ui/status/volume.js";
 
 import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 import {
-  QuickSlider,
+  QuickMenuToggle,
   SystemIndicator,
 } from "resource:///org/gnome/shell/ui/quickSettings.js";
 
-const AppStreamSlider = GObject.registerClass(
-  class AppStreamSlider extends QuickSlider {
+const AppVolumeSlider = GObject.registerClass(
+  class AppVolumeSlider extends PopupMenu.PopupBaseMenuItem {
     _init(stream, control) {
       super._init({
-        iconName: stream.get_icon_name?.() ?? "audio-volume-high-symbolic",
-        iconReactive: true,
+        activate: false,
+        hover: false,
+        style_class: "quick-slider",
       });
+      this.track_hover = false;
 
       this._control = control;
-      this._stream = null;
+      this._stream = stream;
 
-      const name = stream.get_name?.() ?? "";
-      const description = stream.get_description?.() ?? "";
-      const labelText =
-        name && description ? `${name}: ${description}` : name || description;
-      const appLabel = new St.Label({
-        text: labelText,
-        x_expand: true,
-        x_align: Clutter.ActorAlign.START,
-        style: "min-width: 0;",
+      const icon = new St.Icon({
+        icon_name: stream.get_icon_name?.() ?? "audio-volume-high-symbolic",
+        style_class: "popup-menu-icon",
       });
-
-      const box = this.child;
-      const sliderBin = this.slider.get_parent();
-      box.remove_child(sliderBin);
+      this._iconButton = new St.Button({
+        child: icon,
+        can_focus: true,
+        x_align: Clutter.ActorAlign.CENTER,
+        y_align: Clutter.ActorAlign.CENTER,
+        style_class: "icon-button",
+      });
+      this._iconButton.connect("clicked", () => {
+        this._stream.change_is_muted(!this._stream.is_muted);
+      });
+      this.add_child(this._iconButton);
 
       const vbox = new St.BoxLayout({
         orientation: Clutter.Orientation.VERTICAL,
         x_expand: true,
       });
-      vbox.add_child(appLabel);
-      vbox.add_child(sliderBin);
 
-      box.add_child(vbox);
+      const name = stream.get_name?.() ?? "";
+      const description = stream.get_description?.() ?? "";
+      const labelText =
+        name && description ? `${name}: ${description}` : name || description;
+      const label = new St.Label({
+        text: labelText,
+        x_align: Clutter.ActorAlign.START,
+        style: "min-width: 0; max-width: 20em",
+      });
+      vbox.add_child(label);
 
-      this._sliderChangedId = this.slider.connect(
+      this._slider = new Slider(0);
+      this._sliderChangedId = this._slider.connect(
         "notify::value",
         this._onSliderChanged.bind(this),
       );
+      vbox.add_child(this._slider);
 
-      this.connect("icon-clicked", () => {
-        if (this._stream) this._stream.change_is_muted(!this._stream.is_muted);
-      });
+      this.add_child(vbox);
 
-      this.stream = stream;
-    }
+      this._stream.connectObject(
+        "notify::is-muted",
+        () => this._updateVolume(),
+        "notify::volume",
+        () => this._updateVolume(),
+        this,
+      );
 
-    get stream() {
-      return this._stream;
-    }
-
-    set stream(stream) {
-      this._stream?.disconnectObject(this);
-      this._stream = stream;
-      if (this._stream) {
-        this._stream.connectObject(
-          "notify::is-muted",
-          this._updateVolume.bind(this),
-          "notify::volume",
-          this._updateVolume.bind(this),
-          this,
-        );
-        this._updateVolume();
-      }
+      this._updateVolume();
     }
 
     _onSliderChanged() {
-      if (!this._stream) return;
-      const volume = this.slider.value * this._control.get_vol_max_norm();
+      const volume = this._slider.value * this._control.get_vol_max_norm();
       const wasMuted = this._stream.is_muted;
       if (volume < 1) {
         this._stream.volume = 0;
@@ -93,26 +93,35 @@ const AppStreamSlider = GObject.registerClass(
     }
 
     _updateVolume() {
-      if (!this._stream) return;
       const normalized = this._stream.is_muted
         ? 0
         : this._stream.volume / this._control.get_vol_max_norm();
-      this.slider.block_signal_handler(this._sliderChangedId);
-      this.slider.value = normalized;
-      this.slider.unblock_signal_handler(this._sliderChangedId);
-      this.iconName = this._stream.is_muted
+      this._slider.block_signal_handler(this._sliderChangedId);
+      this._slider.value = normalized;
+      this._slider.unblock_signal_handler(this._sliderChangedId);
+      this._iconButton.child.icon_name = this._stream.is_muted
         ? "audio-volume-muted-symbolic"
         : (this._stream.get_icon_name?.() ?? "audio-volume-high-symbolic");
+    }
+
+    destroy() {
+      this._stream.disconnectObject(this);
+      super.destroy();
     }
   },
 );
 
-const MixerIndicator = GObject.registerClass(
-  class MixerIndicator extends SystemIndicator {
+const MixerToggle = GObject.registerClass(
+  class MixerToggle extends QuickMenuToggle {
     _init() {
-      super._init();
+      super._init({
+        title: "Volume Mixer",
+        iconName: "audio-volume-high-symbolic",
+      });
 
-      this._applicationStreams = {};
+      this.menu.setHeader("audio-volume-high-symbolic", "Volume Mixer");
+
+      this._sliderItems = {};
       this._control = Volume.getMixerControl();
 
       this._streamAddedId = this._control.connect(
@@ -129,34 +138,43 @@ const MixerIndicator = GObject.registerClass(
     }
 
     _streamAdded(control, id) {
-      if (id in this._applicationStreams) return;
+      if (id in this._sliderItems) return;
 
       const stream = control.lookup_stream_id(id);
-      if (!stream) return;
       if (stream.is_event_stream || !(stream instanceof Gvc.MixerSinkInput))
         return;
 
-      const slider = new AppStreamSlider(stream, this._control);
-
-      this._applicationStreams[id] = slider;
-      this.quickSettingsItems.push(slider);
+      const item = new AppVolumeSlider(stream, this._control);
+      this._sliderItems[id] = item;
+      this.menu.addMenuItem(item, 2);
     }
 
     _streamRemoved(_control, id) {
-      if (!(id in this._applicationStreams)) return;
-      const slider = this._applicationStreams[id];
-      const idx = this.quickSettingsItems.indexOf(slider);
-      if (idx !== -1) this.quickSettingsItems.splice(idx, 1);
-      slider.destroy();
-      delete this._applicationStreams[id];
+      if (!(id in this._sliderItems)) return;
+      this._sliderItems[id].destroy();
+      delete this._sliderItems[id];
     }
 
     destroy() {
       this._control.disconnect(this._streamAddedId);
       this._control.disconnect(this._streamRemovedId);
-      for (const id in this._applicationStreams)
-        this._applicationStreams[id].destroy();
-      this._applicationStreams = {};
+      for (const id in this._sliderItems) this._sliderItems[id].destroy();
+      this._sliderItems = {};
+      super.destroy();
+    }
+  },
+);
+
+const MixerIndicator = GObject.registerClass(
+  class MixerIndicator extends SystemIndicator {
+    _init() {
+      super._init();
+      this._toggle = new MixerToggle();
+      this.quickSettingsItems.push(this._toggle);
+    }
+
+    destroy() {
+      this._toggle.destroy();
       super.destroy();
     }
   },
@@ -165,14 +183,10 @@ const MixerIndicator = GObject.registerClass(
 export default class MixerExtension extends Extension {
   enable() {
     this._indicator = new MixerIndicator();
-    Main.panel.statusArea.quickSettings.addExternalIndicator(
-      this._indicator,
-      2,
-    );
+    Main.panel.statusArea.quickSettings.addExternalIndicator(this._indicator);
   }
 
   disable() {
-    this._indicator.quickSettingsItems.forEach((item) => item.destroy());
     this._indicator.destroy();
     this._indicator = null;
   }
