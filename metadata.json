@@ -1,8 +1,6 @@
 {
-  "name": "Mixer",
+  "name": "OK Mixer",
   "description": "App specific volume adjustment",
-  "uuid": "mixer@enklht.test.com",
-  "shell-version": [
-    "50"
-  ]
+  "uuid": "ok_mixer@enklht.github.io",
+  "shell-version": ["50"]
 }
