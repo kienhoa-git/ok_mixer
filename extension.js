@@ -20,7 +20,6 @@ const AppVolumeSlider = GObject.registerClass(
       super._init({
         activate: false,
         hover: false,
-        style_class: "quick-slider",
       });
       this.track_hover = false;
 
@@ -37,9 +36,6 @@ const AppVolumeSlider = GObject.registerClass(
         x_align: Clutter.ActorAlign.CENTER,
         y_align: Clutter.ActorAlign.CENTER,
         style_class: "icon-button",
-      });
-      this._iconButton.connect("clicked", () => {
-        this._stream.change_is_muted(!this._stream.is_muted);
       });
       this.add_child(this._iconButton);
 
@@ -67,6 +63,10 @@ const AppVolumeSlider = GObject.registerClass(
       vbox.add_child(this._slider);
 
       this.add_child(vbox);
+
+      this._iconButton.connect("clicked", () => {
+        this._stream.change_is_muted(!this._stream.is_muted);
+      });
 
       this._stream.connectObject(
         "notify::is-muted",
@@ -115,9 +115,12 @@ const MixerToggle = GObject.registerClass(
   class MixerToggle extends QuickMenuToggle {
     _init() {
       super._init({
-        title: "Volume Mixer",
+        title: "Mixer",
         iconName: "audio-volume-high-symbolic",
       });
+
+      const contents = this._box.get_first_child();
+      contents.track_hover = false;
 
       this.menu.setHeader("audio-volume-high-symbolic", "Volume Mixer");
 
